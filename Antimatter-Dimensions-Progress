@@ -1,0 +1,136 @@
+// ==UserScript==
+// @name         Antimatter Dimensions – Progress Info + Title AM
+// @namespace    http://tampermonkey.net/
+// @version      3.0
+// @description  Affiche la vitesse de progression + ETA au-dessus de la barre et l'AM dans le titre de l’onglet (fiable même après navigation).
+// @author       GPT
+// @match        https://ivark.github.io/AntimatterDimensions/*
+// @grant        none
+// @license      MIT
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    // === Affichage intelligent de la vitesse et ETA ===
+    let lastPercent = null;
+    let lastTime = null;
+    let emaSpeed = null;
+    let lastETA = null;
+    const alpha = 0.3;
+    const sampleInterval = 2000;
+    const minSpeed = 0.001;
+
+    function formatTime(sec) {
+        if (!isFinite(sec) || sec > 86400) return "∞";
+        sec = Math.floor(sec);
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        const s = sec % 60;
+        return `${h > 0 ? h + 'h ' : ''}${m > 0 ? m + 'm ' : ''}${s}s`;
+    }
+
+    function updateProgressInfo() {
+        const fillDiv = document.querySelector('.c-progress-bar__fill');
+        if (!fillDiv) return;
+
+        const barContainer = fillDiv.closest('.c-progress-bar');
+        if (!barContainer) return;
+
+        if (getComputedStyle(barContainer).position === 'static') {
+            barContainer.style.position = 'relative';
+        }
+
+        let infoDiv = barContainer.querySelector('.ad-info-div');
+        if (!infoDiv) {
+            infoDiv = document.createElement('div');
+            infoDiv.className = 'ad-info-div';
+            infoDiv.style.position = 'absolute';
+            infoDiv.style.bottom = '100%';
+            infoDiv.style.left = '50%';
+            infoDiv.style.transform = 'translateX(-50%) translateY(-2px)';
+            infoDiv.style.fontFamily = 'Arial, sans-serif';
+            infoDiv.style.fontSize = '14px';
+            infoDiv.style.color = '#00FFFF';
+            infoDiv.style.whiteSpace = 'nowrap';
+            infoDiv.style.pointerEvents = 'none';
+            barContainer.appendChild(infoDiv);
+        }
+
+        const styleWidth = fillDiv.style.width;
+        const currentPercent = parseFloat(styleWidth);
+        const now = Date.now();
+
+        if (!isNaN(currentPercent) && lastPercent !== null && lastTime !== null) {
+            const deltaPercent = currentPercent - lastPercent;
+            const deltaTime = (now - lastTime) / 1000;
+
+            if (deltaTime >= sampleInterval / 1000) {
+                const instantSpeed = deltaPercent / deltaTime;
+                if (emaSpeed === null) {
+                    emaSpeed = instantSpeed;
+                } else {
+                    emaSpeed = alpha * instantSpeed + (1 - alpha) * emaSpeed;
+                }
+
+                lastPercent = currentPercent;
+                lastTime = now;
+
+                const remaining = 100 - currentPercent;
+                let eta = emaSpeed > minSpeed ? remaining / emaSpeed : Infinity;
+
+                if (lastETA !== null && isFinite(lastETA) && isFinite(eta)) {
+                    const ratio = eta / lastETA;
+                    if (ratio > 1.5 || ratio < 0.67) {
+                        eta = 0.5 * eta + 0.5 * lastETA;
+                    }
+                }
+
+                lastETA = eta;
+
+                const speedText = emaSpeed.toFixed(2);
+                const etaText = formatTime(eta);
+
+                infoDiv.textContent = `⚡ ${speedText}%/s | ⏱ ETA: ${etaText}`;
+            }
+        } else {
+            lastPercent = currentPercent;
+            lastTime = now;
+        }
+    }
+
+    setInterval(updateProgressInfo, 1000);
+
+// === Met à jour le titre du navigateur avec la valeur d'antimatter ===
+function waitForAMElement(callback) {
+    const checkInterval = setInterval(() => {
+        const amElem = document.querySelector('.c-game-header__antimatter');
+        if (amElem) {
+            clearInterval(checkInterval);
+            callback(amElem);
+        }
+    }, 500);
+}
+
+function observeAndUpdateTitle(amElem) {
+    const updateTitle = () => {
+        const value = amElem.textContent.trim();
+        if (value && value.length > 0) {
+            document.title = `${value} - Antimatter Dimensions`;
+        }
+    };
+
+    // Mise à jour initiale
+    updateTitle();
+
+    // Observer les changements dans le texte
+    const observer = new MutationObserver(updateTitle);
+    observer.observe(amElem, { childList: true, characterData: true, subtree: true });
+
+    // Màj régulière au cas où
+    setInterval(updateTitle, 5000);
+}
+
+waitForAMElement(observeAndUpdateTitle);
+
+})();
