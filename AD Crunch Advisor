@@ -1,0 +1,124 @@
+// ==UserScript==
+// @name         Antimatter Dimensions Crunch Advisor Minimal Plus
+// @namespace    http://tampermonkey.net/
+// @version      1.2
+// @description  Affiche discrètement quand crunch conseillé sans spam inutile. Drag & Save.
+// @author       Toi
+// @match        https://ivark.github.io/AntimatterDimensions/*
+// @grant        none
+// ==/UserScript==
+
+(function () {
+  'use strict';
+
+  function init() {
+    const overlay = document.createElement('div');
+    overlay.id = 'crunchHistoryOverlay';
+    overlay.style.position = 'fixed';
+    overlay.style.bottom = '10px';
+    overlay.style.right = '10px';
+    overlay.style.width = '280px';
+    overlay.style.padding = '10px';
+    overlay.style.background = 'rgba(0,0,0,0.75)';
+    overlay.style.color = '#fff';
+    overlay.style.fontFamily = 'monospace, monospace';
+    overlay.style.fontSize = '12px';
+    overlay.style.borderRadius = '6px';
+    overlay.style.zIndex = 99999;
+    overlay.style.userSelect = 'none';
+    overlay.style.boxShadow = '0 0 10px rgba(0,0,0,0.7)';
+    overlay.style.whiteSpace = 'pre-wrap';
+    overlay.style.cursor = 'move';
+    overlay.innerText = 'Chargement des données...';
+    document.body.appendChild(overlay);
+
+    // Position sauvegardée
+    const savedPos = JSON.parse(localStorage.getItem('crunchOverlayPos'));
+    if (savedPos) {
+      overlay.style.bottom = 'auto';
+      overlay.style.right = 'auto';
+      overlay.style.top = savedPos.top;
+      overlay.style.left = savedPos.left;
+    }
+
+    // Drag
+    let isDragging = false, offsetX = 0, offsetY = 0;
+    overlay.addEventListener('mousedown', e => {
+      isDragging = true;
+      offsetX = e.clientX - overlay.offsetLeft;
+      offsetY = e.clientY - overlay.offsetTop;
+    });
+    document.addEventListener('mousemove', e => {
+      if (isDragging) {
+        overlay.style.top = `${e.clientY - offsetY}px`;
+        overlay.style.left = `${e.clientX - offsetX}px`;
+        overlay.style.bottom = 'auto';
+        overlay.style.right = 'auto';
+      }
+    });
+    document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        localStorage.setItem('crunchOverlayPos', JSON.stringify({
+          top: overlay.style.top,
+          left: overlay.style.left
+        }));
+      }
+    });
+
+    const crunchHistory = [];
+
+    function getCrunchData() {
+      try {
+        const btn = [...document.querySelectorAll('button.o-prestige-button.o-infinity-button')]
+          .find(b => !b.classList.contains('o-infinity-button--unavailable') && /Big Crunch/i.test(b.textContent));
+        if (!btn) return null;
+
+        const match = btn.textContent.match(/Big Crunch for\s*([\d.e+-]+)/i);
+        return match ? parseFloat(match[1]) : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function formatAD(num) {
+      if (!num) return '0';
+      const e = Math.floor(Math.log10(Math.abs(num)));
+      const m = num / Math.pow(10, e);
+      return m.toFixed(2) + 'e' + e;
+    }
+
+    function average(arr) {
+      return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+    }
+
+    function median(arr) {
+      if (!arr.length) return 0;
+      const sorted = [...arr].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+
+    function update() {
+      const crunch = getCrunchData();
+      if (crunch === null) return;
+
+      crunchHistory.push(crunch);
+      if (crunchHistory.length > 100) crunchHistory.shift();
+
+      const maxVal = Math.max(...crunchHistory);
+      const threshold = 0.75 * maxVal;
+      const filtered = crunchHistory.filter(v => v >= threshold);
+      const avg = average(filtered);
+      const med = median(filtered);
+
+      overlay.innerText =
+`📊 Max: ${formatAD(maxVal)}
+Médiane filtrée: ${formatAD(med)} IP`;
+    }
+
+    setInterval(update, 50);
+  }
+
+  document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', init) : init();
+})();
